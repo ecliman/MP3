@@ -1,33 +1,16 @@
 import numpy as np
 import pandas as pd
-from keras.utils import to_categorical
-from tensorflow import keras
+
+import keras
 from keras.models import Sequential
-from keras.layers import Flatten, Dense
-from sklearn.model_selection import train_test_split
-train_set= np.load('/Users/eliecliman/Desktop/dominik/x_train.npy', allow_pickle=True)
-test_set = np.load('/Users/eliecliman/Desktop/dominik/x_test2.npy', allow_pickle=True)
-train_labels=pd.read_csv('/Users/eliecliman/Desktop/dominik/train_max_y1.csv')
-
-train_labels = np.asarray(train_labels['Label'])
-train_labels=to_categorical(train_labels)
-print(train_labels.shape)
-x_train,x_val,y_train,y_val = train_test_split(train_set,train_labels,test_size=0.15)
-
-def keras_reshape(a):
-    return a.reshape(a.shape[0],128,128,1)
-
-x_train = keras_reshape(x_train)
-x_val = keras_reshape(x_val)
-x_train = x_train/255
-x_val = x_val/255
-
 from keras.layers import Conv2D, MaxPooling2D, ZeroPadding2D, Conv2D, Dropout
-from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D
-num_labels = y_train.shape[1]
+from keras.layers import Flatten, Dense
+from keras import optimizers
 
+from sklearn.model_selection import train_test_split
 
 # ** Model Begins **
+
 def create_model():
     model = Sequential()
     model.add(ZeroPadding2D( (1, 1), input_shape=(128, 128, 1) ) )
@@ -57,8 +40,6 @@ def create_model():
     model.add((MaxPooling2D(2, 2)))
     model.add( Dropout( 0.5 ) )
 
-
-
     model.add( Flatten() )
     model.add( Dense( 512, activation='relu' ) )
     model.add(Dropout(0.5))
@@ -68,27 +49,44 @@ def create_model():
 
     model.summary()
 
-
     model.compile( loss='categorical_crossentropy',
-                   optimizer='adam',
+                   optimizer=optimizers.Adam(learning_rate=0.01),
                    metrics=['accuracy'] )
-
-    model.save_weights( 'mnistneuralnet.h5' )
 
     return model
 
+labels = pd.read_csv('data/train_max_y.csv', index_col='Id', squeeze=True).to_numpy() #nrows=64*100
+labels = keras.utils.to_categorical(labels, num_classes=10)
+labels = labels[:12800]
+
+#x_dt = np.dtype( (np.uint8, (128, 128, 1)) )
+#images = np.fromfile( 'data/raw_train_max_x', dtype=x_dt, count=batch_size*100)
+
+def read_images(filename):
+    images = pd.read_pickle(filename).reshape((-1, 128, 128, 1))
+#    images[images < 255.0] = 0.0
+#    images = images.astype(np.uint8)
+    images = images / 255
+    return images
+
+images = read_images('data/train_max_x')
+images = images[:12800]
+
+x_train, x_valid, y_train, y_valid = train_test_split(images, labels, test_size=0.15, shuffle=True)
 
 model = create_model()
-
 model.fit(x_train, y_train,
           batch_size=64, epochs=30,
-          validation_data=(x_val, y_val))
+          validation_data=(x_valid, y_valid))
 
-#prediction = model.predict_categorical(images)[0]
-bestclass = ''
-bestconf = -1
-#for n in [0,1,2,3,4,5,6,7,8,9]:
-#       if (prediction[n] > bestconf):
-#		bestclass = str(n)
-#		bestconf = prediction[n]
-#print(bestclass + " " + str(bestconf * 100) + '% confidence.')
+
+model.save_weights('tf_model_weights.h5')
+
+#test_images = np.fromfile('data/raw_test_max_x', dtype=x_dt)
+test_images = read_images('data/test_max_x')
+
+test_pred = model.predict(test_images)
+print(test_pred[0])
+pd.DataFrame(test_pred.argmax(axis=1)).to_csv("pred.csv", header=["Label"], index_label="Id")
+
+
